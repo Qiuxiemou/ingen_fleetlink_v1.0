@@ -7,7 +7,7 @@ Week: November 2–7, 2026
 
 ## Work Completed
 
-During the first week, I reviewed the engineering documentation for five InGen platforms: Aido Rover, Fari, Sentinel Prime AI, Aido Humanoid, and Senpai. I analyzed their connectivity environments, message patterns, command safety requirements, operator roles, and data retention considerations.
+During the first week, I compared several robotics connectivity scenarios. I analyzed link environments, message patterns, command safety requirements, operator roles, and data retention considerations.
 
 Based on these findings, I prepared three Architecture Decision Records (ADRs) covering robot communication transport, database selection, and command-delivery semantics. I also created a service design document describing component responsibilities, failure handling, initial APIs, and performance targets.
 
@@ -21,7 +21,7 @@ The most challenging architectural decision was selecting the communication tran
 
 MQTT provides publish-subscribe messaging and configurable delivery guarantees, making it attractive for IoT devices. However, it introduces broker infrastructure and additional operational complexity. gRPC offers strongly typed interfaces and efficient binary communication, but direct browser integration is less straightforward.
 
-I selected WebSocket for the initial FleetLink implementation because Aido Rover requires frequent telemetry updates and bidirectional command communication. WebSocket integrates directly with FastAPI and can also support communication with the future React operator console.
+I selected WebSocket for the initial FleetLink implementation because the simulated patrol workload sends frequent telemetry and needs bidirectional command communication. WebSocket integrates directly with FastAPI and can also support communication with the future React operator console.
 
 An important limitation is that WebSocket runs over TCP. Packet loss can cause head-of-line blocking, delaying newer messages while missing data is retransmitted. WebSocket also does not automatically provide application-level command deduplication, expiration, or session recovery.
 

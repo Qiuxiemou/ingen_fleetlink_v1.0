@@ -2,7 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = ""
+    database_url: str = (
+        "postgresql+psycopg://fleetlink:change_me@localhost:5432/fleetlink"
+    )
+    robot_dev_token: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

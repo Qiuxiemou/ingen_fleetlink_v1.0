@@ -4,10 +4,30 @@ name: FleetLink CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      verify_failure:
+        description: Inject a failing test to verify the pytest step
+        type: boolean
+        default: false
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fleetlink
+          POSTGRES_PASSWORD: ci_test_only
+          POSTGRES_DB: fleetlink_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fleetlink -d fleetlink_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
 
     steps:
       - name: Checkout repository
@@ -31,9 +51,17 @@ jobs:
         run: uv run black --check .
 
       - name: Mypy type check
-        run: uv run mypy app
+        run: uv run mypy app simulator
+
+      - name: Inject deliberately failing test
+        if: ${{ inputs.verify_failure == true }}
+        run: |
+          cat > tests/test_ci_failure_probe.py <<'PY'
+          def test_intentional_ci_failure():
+              assert 1 == 2, "Intentional CI failure probe"
+          PY
 
       - name: Pytest with coverage
         env:
-          DATABASE_URL: postgresql+psycopg://fleetlink:dummy@localhost:5432/fleetlink
-        run: uv run pytest -v --cov=app --cov-report=term-missing
+          FLEETLINK_TEST_DATABASE_URL: postgresql+psycopg://fleetlink:ci_test_only@localhost:5432/fleetlink_test
+        run: uv run pytest -v --cov=app --cov=simulator --cov-report=term-missing

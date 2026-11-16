@@ -1,0 +1,10 @@
+seed: 17
+robot_count: 20
+duration_seconds: 600
+telemetry_hz: 5
+speed_mps: 1.5
+waypoints:
+  - {x: 0, y: 0}
+  - {x: 8, y: 0}
+  - {x: 8, y: 6}
+  - {x: 0, y: 6}

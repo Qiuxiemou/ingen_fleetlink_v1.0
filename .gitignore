@@ -5,3 +5,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+W01_Connectivity_Platform_Brief.docx
+W01_Service_Design_Doc.docx
+private/

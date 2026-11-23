@@ -1,5 +1,7 @@
 # Robot link v1
 
+Week 3 adds the opt-in resilience-v1 capability, telemetry sample acknowledgements, and optional HELLO resume fields. See [the migration and recovery design](W03_Resilience_Design.md). Clients without that capability retain the original WELCOME payload. The envelope sequence still resets for each connection.
+
 Connect to `ws://127.0.0.1:8000/v1/link` for local development. Each WebSocket text message contains one JSON object, up to 16,384 UTF-8 bytes. Run Uvicorn with `--ws-max-size 32768` so the application can send `MESSAGE_TOO_LARGE` for messages above its limit and the transport can still cap larger inputs.
 
 ## Envelope

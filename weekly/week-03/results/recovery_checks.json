@@ -1,0 +1,15 @@
+{
+  "authentication_failure_isolated": true,
+  "unaffected_robot": {
+    "robot_id": "sim-0002",
+    "generated": 80,
+    "sent": 80,
+    "replayed": 1,
+    "dropped": 0,
+    "unacknowledged": 0,
+    "max_buffer": 1,
+    "reconnects": 0
+  },
+  "deadman_seconds": 2.5059,
+  "stop_after_deadman_expiry_seconds": 0.0059
+}

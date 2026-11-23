@@ -1,5 +1,7 @@
 # Robot simulator v0
 
+Week 3 enables recovery by default. Scenarios may set `resilience: false` for the Week 2 connection behavior. Recovery scenarios additionally accept `buffer_samples` (default 300) and `replay_hz` (default 10). Set replay_hz above telemetry_hz to drain buffered samples while new sampling continues. Summary output includes generated, sent, replayed, dropped, pending, and reconnect counts. The [resilience design](../docs/W03_Resilience_Design.md) describes the deadman, resume cursor, and failure isolation.
+
 Set `ROBOT_DEV_TOKEN` to the same local development token used by the gateway. Starting the gateway and running the default scenario for ten minutes requires two terminals.
 
 ```sh

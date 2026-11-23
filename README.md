@@ -2,6 +2,16 @@
 
 Fleet connectivity and mission backend for simulated robotics systems.
 
+## Weekly submissions
+
+| Week | Deliverables |
+| --- | --- |
+| [Week 1](weekly/week-01/README.md) | Service foundation, architecture decisions, failure modes, and readiness checks |
+| [Week 2](weekly/week-02/README.md) | Protocol v1, robot REST API, simulator v0, and contract tests |
+| [Week 3](weekly/week-03/README.md) | Network lab, liveness, session recovery, telemetry replay, and measured link budget |
+
+The implementation continues under app/ and simulator/. Each weekly index links its documents, tests, and runnable tools.
+
 ## Local development
 
 Install Python 3.11 and uv, then run `uv sync --locked`. Copy `.env.example` to `.env` and generate a development token with `uv run python -c "import secrets; print(secrets.token_urlsafe(32))"`. Set that value as `ROBOT_DEV_TOKEN` in your local `.env`.

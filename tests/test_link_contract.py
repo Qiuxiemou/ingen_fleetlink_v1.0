@@ -82,6 +82,11 @@ def test_robot_session_and_api(client: TestClient) -> None:
         assert welcome["msg_type"] == "WELCOME"
         assert welcome["seq"] == 1
         assert welcome["payload"]["negotiated_version"] == 1
+        assert set(welcome["payload"]) == {
+            "session_id",
+            "negotiated_version",
+            "server_time",
+        }
         assert welcome["session_id"] == welcome["payload"]["session_id"]
         identity = {"session_id": welcome["session_id"]}
         path = "/v1/robots/sim-0001"

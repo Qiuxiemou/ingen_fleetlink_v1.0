@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import time
 from asyncio import timeout
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -12,6 +13,7 @@ from app.core.config import settings
 from app.models.protocol import (
     MAX_MESSAGE_BYTES,
     VERSION,
+    Command,
     CommandAck,
     CommandResult,
     Envelope,
@@ -21,8 +23,10 @@ from app.models.protocol import (
     ProtocolError,
     ProtocolModel,
     Telemetry,
+    TelemetryAck,
     Welcome,
 )
+from app.services.link_quality import OFFLINE_SECONDS
 from app.services.robots import RobotSession, registry
 
 router = APIRouter()
@@ -33,6 +37,7 @@ ROBOT_PAYLOADS: dict[MessageType, type[BaseModel]] = {
     MessageType.TELEMETRY: Telemetry,
     MessageType.COMMAND_ACK: CommandAck,
     MessageType.COMMAND_RESULT: CommandResult,
+    MessageType.HEARTBEAT_ACK: HeartbeatAck,
 }
 
 
@@ -47,9 +52,13 @@ class Link:
     def __init__(self, socket: WebSocket):
         self.socket = socket
         self.session: RobotSession | None = None
+        self.session_generation = -1
         self.robot_id: str | None = None
         self.send_seq = 0
         self.expected_seq = 1
+        self.pending_heartbeats: dict[int, float] = {}
+        self.next_heartbeat = time.monotonic()
+        self.pending_commands: dict[object, float] = {}
 
     async def receive(self) -> Envelope:
         event = await self.socket.receive()
@@ -78,7 +87,9 @@ class Link:
             raise LinkError("INVALID_ENVELOPE", "Invalid envelope fields") from exc
         return message
 
-    async def send(self, kind: MessageType, payload: BaseModel) -> None:
+    async def send(
+        self, kind: MessageType, payload: BaseModel, exclude: set[str] | None = None
+    ) -> None:
         self.send_seq += 1
         await self.socket.send_text(
             Envelope(
@@ -88,7 +99,9 @@ class Link:
                 session_id=self.session.session_id if self.session else None,
                 seq=self.send_seq,
                 sent_at=datetime.now(UTC),
-                payload=payload.model_dump(mode="json", exclude_none=True),
+                payload=payload.model_dump(
+                    mode="json", exclude_none=True, exclude=exclude
+                ),
             ).model_dump_json()
         )
 
@@ -104,6 +117,8 @@ class Link:
         if message.seq < self.expected_seq:
             raise LinkError("DUPLICATE_SEQ", "Sequence already used", self.expected_seq)
         if message.seq > self.expected_seq:
+            if self.session:
+                self.session.quality.sequence_gaps += message.seq - self.expected_seq
             raise LinkError("SEQUENCE_GAP", "Sequence skipped", self.expected_seq)
 
     async def handshake(self) -> RobotSession:
@@ -128,14 +143,35 @@ class Link:
         ):
             raise LinkError("AUTH_FAILED", "Invalid or missing development token")
         hello = Hello.model_validate(message.payload)
-        session = registry.connect(message.robot_id, hello.capabilities)
+        if hello.resume_session_id is not None:
+            previous = registry.robots.get(message.robot_id)
+            if previous is None or previous.session_id != hello.resume_session_id:
+                raise LinkError("SESSION_EXPIRED", "Resume session no longer exists")
+            if hello.last_ack_seq > previous.last_sample_seq:
+                raise LinkError(
+                    "INVALID_RESUME", "Acknowledgement exceeds server state"
+                )
+        session = registry.connect(
+            message.robot_id, hello.capabilities, hello.resume_session_id
+        )
         if session is None:
             raise LinkError("ROBOT_ALREADY_CONNECTED", "Robot has an active session")
         self.session = session
+        self.session_generation = session.connection_generation
         self.expected_seq += 1
         await self.send(
             MessageType.WELCOME,
-            Welcome(session_id=session.session_id, server_time=datetime.now(UTC)),
+            Welcome(
+                session_id=session.session_id,
+                server_time=datetime.now(UTC),
+                resumed=hello.resume_session_id is not None,
+                last_ack_seq=session.last_sample_seq,
+            ),
+            exclude=(
+                {"resumed", "last_ack_seq"}
+                if "resilience-v1" not in session.capabilities
+                else None
+            ),
         )
         return session
 
@@ -157,14 +193,29 @@ class Link:
         payload = model.model_validate(message.payload)
         self.expected_seq += 1
         session.last_seen = datetime.now(UTC)
+        session.quality.received_frames += 1
         if message.msg_type == MessageType.HEARTBEAT:
+            session.quality.heartbeat(time.monotonic())
             await self.send(
                 MessageType.HEARTBEAT_ACK, HeartbeatAck(ack_seq=message.seq)
             )
         if isinstance(payload, Telemetry):
-            session.telemetry = payload
-            session.telemetry_received_at = session.last_seen
-            session.telemetry_sent_at = message.sent_at
+            session.accept_telemetry(payload, message.sent_at)
+            if payload.sample_seq is not None:
+                await self.send(
+                    MessageType.TELEMETRY_ACK,
+                    TelemetryAck(sample_seq=session.last_sample_seq),
+                )
+        if isinstance(payload, HeartbeatAck):
+            sent = self.pending_heartbeats.pop(payload.ack_seq, None)
+            if sent is not None:
+                session.quality.heartbeat(time.monotonic())
+                session.quality.observe_rtt((time.perf_counter() - sent) * 1000)
+        if isinstance(payload, CommandAck):
+            sent = self.pending_commands.pop(payload.command_id, None)
+            if sent is not None:
+                session.command_rtt_ms.append((time.perf_counter() - sent) * 1000)
+                del session.command_rtt_ms[:-500]
 
 
 @router.websocket("/v1/link", name="robot_link_v1")
@@ -188,7 +239,39 @@ async def robot_link(socket: WebSocket) -> None:
         logger.info("Robot connected", extra=context)
         while True:
             try:
-                await link.process(session)
+                if time.monotonic() - session.quality.last_heartbeat >= OFFLINE_SECONDS:
+                    session.connected = False
+                    await socket.close(1013, "Heartbeat timeout")
+                    return
+                if (
+                    "resilience-v1" in session.capabilities
+                    and time.monotonic() >= link.next_heartbeat
+                ):
+                    link.next_heartbeat = time.monotonic() + 1
+                    link.pending_heartbeats[link.send_seq + 1] = time.perf_counter()
+                    async with timeout(0.25):
+                        await link.send(MessageType.HEARTBEAT, ProtocolModel())
+                        if settings.lab_probes:
+                            command_id = uuid4()
+                            link.pending_commands[command_id] = time.perf_counter()
+                            await link.send(
+                                MessageType.COMMAND,
+                                Command(command_id=command_id, command="STOP"),
+                            )
+                            link.pending_commands = {
+                                key: sent
+                                for key, sent in link.pending_commands.items()
+                                if time.perf_counter() - sent < OFFLINE_SECONDS
+                            }
+                    link.pending_heartbeats = {
+                        seq: sent
+                        for seq, sent in link.pending_heartbeats.items()
+                        if time.perf_counter() - sent < OFFLINE_SECONDS
+                    }
+                async with timeout(0.25):
+                    await link.process(session)
+            except TimeoutError:
+                continue
             except ValidationError:
                 await link.send_error(
                     LinkError("INVALID_PAYLOAD", "Invalid message payload")
@@ -201,6 +284,9 @@ async def robot_link(socket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        if link.session is not None:
+        if (
+            link.session is not None
+            and link.session.connection_generation == link.session_generation
+        ):
             link.session.connected = False
             logger.info("Robot disconnected", extra=context)

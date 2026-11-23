@@ -65,3 +65,10 @@ jobs:
         env:
           FLEETLINK_TEST_DATABASE_URL: postgresql+psycopg://fleetlink:ci_test_only@localhost:5432/fleetlink_test
         run: uv run pytest -v --cov=app --cov=simulator --cov-report=term-missing
+
+      - name: Resilience lab acceptance
+        run: |
+          trap 'docker compose -f lab/compose.yaml down' EXIT
+          docker compose -f lab/compose.yaml up --build -d
+          uv run python -m scripts.measure_links --profile blackout_15 --seconds 25 --output /tmp/fleetlink-recovery.json
+          uv run python -m scripts.verify_recovery

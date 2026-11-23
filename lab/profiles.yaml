@@ -1,0 +1,17 @@
+version: 1
+seed: 17
+profiles:
+  - {name: clean}
+  - {name: latency_50, latency_ms: 50}
+  - {name: latency_100, latency_ms: 100}
+  - {name: latency_200, latency_ms: 200}
+  - {name: latency_300, latency_ms: 300}
+  - {name: jitter_30, latency_ms: 50, jitter_ms: 30}
+  - {name: loss_1, loss_percent: 1}
+  - {name: loss_5, loss_percent: 5}
+  - {name: loss_10, loss_percent: 10}
+  - {name: asymmetric, upstream_ms: 200, downstream_ms: 20}
+  - {name: bandwidth_8k, bandwidth_kbps: 8}
+  - {name: blackout_5, blackout_seconds: 5}
+  - {name: blackout_15, blackout_seconds: 15}
+  - {name: blackout_30, blackout_seconds: 30}

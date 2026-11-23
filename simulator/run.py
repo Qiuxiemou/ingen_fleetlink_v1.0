@@ -40,6 +40,9 @@ class Scenario(ProtocolModel):
     telemetry_hz: int = Field(ge=1, le=100)
     speed_mps: float = Field(gt=0)
     waypoints: list[Point] = Field(min_length=2)
+    resilience: bool = True
+    buffer_samples: int = Field(default=300, ge=1, le=100000)
+    replay_hz: float = Field(default=10, gt=0, le=1000)
 
 
 @dataclass
@@ -134,7 +137,9 @@ class RobotClient:
         self.seq = 0
         self.peer_seq = 0
 
-    async def send(self, kind: MessageType, payload: BaseModel) -> None:
+    async def send(
+        self, kind: MessageType, payload: BaseModel, sent_at: datetime | None = None
+    ) -> None:
         self.seq += 1
         message = Envelope(
             protocol_version=VERSION,
@@ -142,7 +147,7 @@ class RobotClient:
             robot_id=self.robot_id,
             session_id=self.session_id,
             seq=self.seq,
-            sent_at=datetime.now(UTC),
+            sent_at=sent_at or datetime.now(UTC),
             payload=payload.model_dump(mode="json", exclude_none=True),
         )
         await self.socket.send(message.model_dump_json())
@@ -221,13 +226,23 @@ async def run_robot(url: str, token: str, scenario: Scenario, index: int) -> str
 
 
 async def run_fleet(url: str, token: str, scenario: Scenario) -> None:
-    async with asyncio.TaskGroup() as fleet:
-        tasks = [
-            fleet.create_task(run_robot(url, token, scenario, index))
-            for index in range(scenario.robot_count)
-        ]
-    for task in tasks:
-        print(task.result())
+    from simulator.resilience import ResilientRobot
+
+    runners = [
+        (
+            ResilientRobot(url, token, scenario, index).run()
+            if scenario.resilience
+            else run_robot(url, token, scenario, index)
+        )
+        for index in range(scenario.robot_count)
+    ]
+    results = await asyncio.gather(*runners, return_exceptions=True)
+    for index, result in enumerate(results):
+        print(f"sim-{index + 1:04d} {result}")
+    if any(isinstance(result, BaseException) for result in results):
+        raise RuntimeError(
+            "One or more robots failed; other robots completed independently"
+        )
 
 
 def main() -> None:

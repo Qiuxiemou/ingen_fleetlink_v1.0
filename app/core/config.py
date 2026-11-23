@@ -6,6 +6,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://fleetlink:change_me@localhost:5432/fleetlink"
     )
     robot_dev_token: str = ""
+    lab_probes: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

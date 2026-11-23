@@ -25,6 +25,7 @@ class MessageType(StrEnum):
     HEARTBEAT = "HEARTBEAT"
     HEARTBEAT_ACK = "HEARTBEAT_ACK"
     TELEMETRY = "TELEMETRY"
+    TELEMETRY_ACK = "TELEMETRY_ACK"
     COMMAND = "COMMAND"
     COMMAND_ACK = "COMMAND_ACK"
     COMMAND_RESULT = "COMMAND_RESULT"
@@ -62,16 +63,25 @@ class Envelope(ProtocolModel):
 class Hello(ProtocolModel):
     token: str = Field(min_length=1, max_length=512)
     capabilities: list[str] = Field(max_length=32)
+    resume_session_id: UUID | None = None
+    last_ack_seq: int = Field(default=0, ge=0)
+    last_server_seq: int = Field(default=0, ge=0)
 
 
 class Welcome(ProtocolModel):
     session_id: UUID
     negotiated_version: Literal[1] = VERSION
     server_time: Timestamp
+    resumed: bool = False
+    last_ack_seq: int = 0
 
 
 class HeartbeatAck(ProtocolModel):
     ack_seq: int
+
+
+class TelemetryAck(ProtocolModel):
+    sample_seq: int = Field(ge=1)
 
 
 class Pose(ProtocolModel):
@@ -86,6 +96,8 @@ class Telemetry(ProtocolModel):
     battery: float = Field(ge=0, le=100)
     mode: Literal["PATROL", "MOVING", "STOPPED", "DOCKING", "DOCKED"]
     mission_step: int = Field(ge=0)
+    sample_seq: int | None = Field(default=None, ge=1)
+    replayed: bool = False
 
 
 class Point(ProtocolModel):

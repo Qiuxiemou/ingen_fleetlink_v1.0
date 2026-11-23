@@ -1,0 +1,16 @@
+name: fleetlink-w03
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.13.0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:18474:8474"
+      - "127.0.0.1:18800:18800"
+  netem:
+    build:
+      context: .
+      dockerfile: Dockerfile.netem
+    network_mode: "service:toxiproxy"
+    cap_add:
+      - NET_ADMIN
